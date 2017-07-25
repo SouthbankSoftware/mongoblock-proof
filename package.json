@@ -1,0 +1,34 @@
+{
+  "name": "mongoblock-proof",
+  "version": "1.0.0",
+  "description": "",
+  "main": "mongoHash.js",
+  "dependencies": {
+    "babel-plugin-syntax-async-functions": "^6.1.4",
+    "babel-plugin-transform-regenerator": "^6.1.4",
+    "babel-polyfill": "^6.1.4",
+    "babel-preset-es2015": "^6.1.4",
+    "request": "^2.65.0",
+    "eslint": "^3.19.0",
+    "eslint-config-airbnb": "^14.1.0",
+    "eslint-import-resolver-node": "^0.3.0",
+    "eslint-plugin-import": "^2.2.0",
+    "eslint-plugin-jsx-a11y": "^4.0.0",
+     "mongodb": "*",
+    "sprintf-js": "*",
+    "command-line-args":"*"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gharriso/mongoblock-proof.git"
+  },
+  "author": "",
+  "license": "AGPL-3.0",
+  "bugs": {
+    "url": "https://github.com/gharriso/mongoblock-proof/issues"
+  },
+  "homepage": "https://github.com/gharriso/mongoblock-proof#readme"
+}
