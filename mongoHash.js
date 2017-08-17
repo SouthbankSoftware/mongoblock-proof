@@ -20,6 +20,12 @@
 const crypto = require('crypto');
 const MongoClient = require('mongodb').MongoClient;
 const commandLineArgs = require('command-line-args');
+const Hashclient = require('hashapi-lib-node');
+
+
+let hashClient; // Tierion client
+const debug = true;
+
 
 const options = commandLineOptions();
 let hash;
@@ -27,28 +33,67 @@ let hash;
 const db0 = MongoClient.connect('mongodb://' + options.uri);
 
 //
-// Demo loop to create a hash, store in in db, then check the hash. 
+// Connect to tierion
 //
-var query= options.query;
-var projection= options.projection; 
- 
-db0.then((db) => {
-    init(db); // This only needs to becalled once
+const authToken = setupTierion(options.tierionUser, options.tierionPassword);
+
+console.log(db0, authToken);
+//
+// Demo loop to create a hash, store in in db, then check the hash.
+//
+const query = options.query;
+const projection = options.projection;
+
+Promise.all([db0, authToken]).then((params) => {
+    const db = params[0];
+    // const token = params[1];
+    // if (debug) console.log(token);
+    init(db); // This only needs to be called once
     hash = genHash(db, options.collection, query, projection);
     hash.then((h) => {
         console.log('options=' + JSON.stringify(options));
         console.log('hash=' + h);
-        saveHash(db, db.databaseName, options.collection, h,
+        saveHashDb(db, db.databaseName, options.collection, h,
             query, projection).then((o) => {
             console.log('insert result=' + JSON.stringify(o.result));
-            checkHash(db, db.databaseName, options.collection,
-                query, projection).then ((x)=>{
-                    process.exit(0); 
-                }); 
+            saveHashBlockChain(h).then((res) => {
+                console.log('Blockchain result', res);
+                checkHash(db, db.databaseName, options.collection,
+                    query, projection).then(() => {
+                    process.exit(0);
+                });
+            });
         });
     });
+}).catch((err) => {
+    console.log(err);
+    process.exit(1);
 });
 
+function setupTierion(username, password) {
+    hashClient = new Hashclient();
+    returnValue = new Promise((resolve, reject) => {
+        if (debug) {
+            console.log('Setting up Tierion with ');
+            console.log(username);
+            console.log(password);
+        }
+        hashClient.authenticate(username, password, (err, myToken) => {
+            if (err) {
+                // handle the error
+                reject(err);
+            } else {
+                // authentication was successful
+                // access_token, refresh_token are returned in authToken
+                // authToken values are saved internally and managed autmatically for the life of the HashClient
+                console.log('Authentiattion success');
+                console.log(myToken);
+                resolve(myToken);
+            }
+        });
+    });
+    return (returnValue);
+}
 //
 // This just needs to be called once to setup unique index
 //
@@ -92,12 +137,37 @@ function genHash(db, collection, query, projection) {
     return (hash);
 }
 
+function saveHashBlockChain(hash) {
+    if (debug) console.log('registering hash in blockchain ', hash);
+    blockchainReceipt = new Promise((resolve, reject) => {
+        hashClient.submitHashItem(hash, (err, receiptid) => {
+            if (err) {
+                console.log(err);
+                reject(err);
+            } else {
+                console.log('receipt id', receiptid);
+                setTimeout
+                hashClient.getReceipt(receiptid.receiptId, (err2, result) => {
+                    if (err2) {
+                        console.log(err2);
+                        reject(err2);
+                    } else {
+                        console.log(result);
+                        resolve(result);
+                    }
+                });
+            }
+        });
+    });
+    return (blockchainReceipt);
+}
 //
 // Insert a hash into the control table
 //
-function saveHash(db, dbName, collection, hash, query, projection) {
-    // console.log('SaveHash');
+function saveHashDb(db, dbName, collection, hash, query, projection) {
+    console.log('SaveHash');
     mydb = db.db('mongoblock-proof');
+
     hashData = {
         hash,
         status: 'pending',
@@ -105,9 +175,9 @@ function saveHash(db, dbName, collection, hash, query, projection) {
     };
     filterData = {
         db: dbName,
-        collection:collection,
-        query:query,
-        projection: projection
+        collection,
+        query,
+        projection
     };
     console.log(filterData);
     insertedObject = new Promise((resolve, reject) => {
@@ -117,9 +187,9 @@ function saveHash(db, dbName, collection, hash, query, projection) {
             upsert: true
         }, (err, res) => {
             if (err) {
-                    reject(err);
+                reject(err);
             } else {
-                    resolve(res);
+                resolve(res);
             }
         });
     });
@@ -130,24 +200,23 @@ function saveHash(db, dbName, collection, hash, query, projection) {
 // See if the hash in the control table still matches the query parameters
 //
 function checkHash(db, dbName, collection, query, projection) {
-    
-    var mydb = db.db('mongoblock-proof');
-    var mycollection=mydb.collection('query_hashes');
+    const mydb = db.db('mongoblock-proof');
+    const mycollection = mydb.collection('query_hashes');
 
     filterData = {
         db: dbName,
-        collection:collection,
-        query:query,
-        projection: projection
+        collection,
+        query,
+        projection
     };
- 
-   mycollection.find().forEach((doc)=>{
 
-   });
-   returnValue = new Promise((resolve, reject) => {
+    mycollection.find().forEach((doc) => {
+
+    });
+    returnValue = new Promise((resolve, reject) => {
         const data = mycollection.find(filterData).toArray();
-        data.then ( (docarray) =>{
-            docarray.forEach((doc)=>{
+        data.then((docarray) => {
+            docarray.forEach((doc) => {
                 oldHash = doc.hash;
                 genHash(db, collection, query, projection).then((newHash) => {
                     if (newHash !== oldHash) {
@@ -160,15 +229,16 @@ function checkHash(db, dbName, collection, query, projection) {
                         resolve(true);
                     }
                 });
-            }); 
-           
+            });
         });
-   });
+    });
     return (returnValue);
 }
 
+
+
 function commandLineOptions() {
-    const usage = 'Usage: -u MongoURI -c collectionName -q query [-p projection]';
+    const usage = 'Usage: -u MongoURI -c collectionName -q query [-p projection] -U tierionUsername -P tierionPassword';
     const options = commandLineArgs([{
         name: 'uri',
         alias: 'u',
@@ -185,8 +255,16 @@ function commandLineOptions() {
         name: 'projection',
         alias: 'p',
         type: String
+    }, {
+        name: 'tierionUser',
+        alias: 'U',
+        type: String
+    }, {
+        name: 'tierionPassword',
+        alias: 'P',
+        type: String
     }]);
-    if (!(('uri' in options) && ('query' in options) && ('collection' in options))) {
+    if (!(('uri' in options) && ('query' in options) && ('collection' in options) && ('tierionUser' in options))) {
         console.log(usage);
         process.exit();
     }
