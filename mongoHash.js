@@ -56,8 +56,8 @@ Promise.all([db0, authToken]).then((params) => {
         saveHashDb(db, db.databaseName, options.collection, h,
             query, projection).then((o) => {
             console.log('insert result=' + JSON.stringify(o.result));
-            saveHashBlockChain(h).then((res) => {
-                console.log('Blockchain result', res);
+            saveHashBlockChain(db, h).then((res) => {
+                console.log('receipt', res);
                 checkHash(db, db.databaseName, options.collection,
                     query, projection).then(() => {
                     process.exit(0);
@@ -86,7 +86,7 @@ function setupTierion(username, password) {
                 // authentication was successful
                 // access_token, refresh_token are returned in authToken
                 // authToken values are saved internally and managed autmatically for the life of the HashClient
-                console.log('Authentiattion success');
+                console.log('Authentiation success');
                 console.log(myToken);
                 resolve(myToken);
             }
@@ -137,7 +137,7 @@ function genHash(db, collection, query, projection) {
     return (hash);
 }
 
-function saveHashBlockChain(hash) {
+function saveHashBlockChain(db, hash) {
     if (debug) console.log('registering hash in blockchain ', hash);
     blockchainReceipt = new Promise((resolve, reject) => {
         hashClient.submitHashItem(hash, (err, receiptid) => {
@@ -146,20 +146,51 @@ function saveHashBlockChain(hash) {
                 reject(err);
             } else {
                 console.log('receipt id', receiptid);
-                setTimeout
-                hashClient.getReceipt(receiptid.receiptId, (err2, result) => {
-                    if (err2) {
-                        console.log(err2);
-                        reject(err2);
-                    } else {
-                        console.log(result);
-                        resolve(result);
-                    }
-                });
+                console.log('Waiting for confirmation');
+                setTimeout(() => {
+                    hashClient.getReceipt(receiptid.receiptId, (err2, result) => {
+                        if (err2) {
+                            console.log(err2);
+                            reject(err2);
+                        } else {
+                            console.log(result);
+                            console.log('Updating database with receipt');
+                            updateDbRecord(db, hash, result.receipt).then(() => {
+                                resolve(result.receipt);
+                            });
+                        }
+                    });
+                }, 600000);
             }
         });
     });
     return (blockchainReceipt);
+}
+
+// Update the control table with the blockchain receipt
+function updateDbRecord(db, hash, receipt) {
+    console.log('updateDbRecord');
+    mydb = db.db('mongoblock-proof');
+
+    console.log(filterData);
+    updatedObject = new Promise((resolve, reject) => {
+        mydb.collection('query_hashes').update({
+                hash
+            }, {
+                $set: {
+                    status: 'acknowledged',
+                    receipt
+                }
+            },
+            (err, res) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(res);
+                }
+            });
+    });
+    return (upDatedObject);
 }
 //
 // Insert a hash into the control table
