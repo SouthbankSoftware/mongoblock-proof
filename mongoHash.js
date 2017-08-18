@@ -87,11 +87,7 @@ function setupTierion(username, password) {
     process.stdout.write('***** Authenticating with Tierion');
     hashClient = new Hashclient();
     returnValue = new Promise((resolve, reject) => {
-        if (debug) {
-            console.log('Setting up Tierion with ');
-            console.log(username);
-            console.log(password);
-        }
+
         hashClient.authenticate(username, password, (err, myToken) => {
             if (err) {
                 // handle the error
