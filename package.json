@@ -29,7 +29,9 @@
      "mongodb": "*",
     "sprintf-js": "*",
     "command-line-args":"*",
-    "chainpoint-validate":"*"
+    "chainpoint-validate":"*",
+    "bitcoin-p2p": ">=0.0.8",
+    "bigint": ">=0.3.1"
   } ,
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -38,7 +40,7 @@
     "type": "git",
     "url": "git+https://github.com/gharriso/mongoblock-proof.git"
   },
-  "author": "",
+  "author": "guy@southbanksoftware.com",
   "license": "AGPL-3.0",
   "bugs": {
     "url": "https://github.com/gharriso/mongoblock-proof/issues"

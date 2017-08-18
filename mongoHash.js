@@ -23,6 +23,7 @@ const commandLineArgs = require('command-line-args');
 const Hashclient = require('hashapi-lib-node');
 const Chainpointvalidate = require('chainpoint-validate');
 
+
 const chainpointValidate = new Chainpointvalidate();
 
 let hashClient; // Tierion client
@@ -47,11 +48,12 @@ const authToken = setupTierion(options.tierionUser, options.tierionPassword);
 const query = options.query;
 const projection = options.projection;
 
-if (options.validateAll) {
+if (options.ValidateAll) {
     Promise.all([db0, authToken]).then((params) => { // Wait for connection promises
         const db = params[0];
         checkAllHash(db).then(() => {
             console.log('Checked all hashes');
+            process.exit(0);
         });
     });
 } else {
@@ -313,7 +315,7 @@ function checkHash(db, dbName, collection, query, projection) {
                         resolve(false);
                     } else {
                         console.log('Hash has not changed');
-                        validateHash(doc.recept).then((validation) => {
+                        validateHash(doc.receipt).then((validation) => {
                             if (debug) console.log(validation);
                             resolve(true);
                         });
@@ -334,7 +336,10 @@ function validateHash(receipt) {
             if (err) {
                 reject(err);
             } else if (result.isValid === true) {
-                console.log('receipt is valid');
+                console.log('***** Reciept is valid');
+                console.log('***** See https://blockchain.info/tx/' + receipt.anchors[0].sourceId);
+                console.log('***** For blockchain transaction details');
+                // TODO: Should lookup blockchain transaction and check timestamps align
                 resolve(result);
             } else {
                 reject(result);
@@ -345,7 +350,7 @@ function validateHash(receipt) {
 }
 
 function commandLineOptions() {
-    const usage = 'Usage: -u MongoURI -c collectionName -q query [-p projection] -U tierionUsername -P tierionPassword';
+    const usage = 'Usage: -u MongoURI -c collectionName -q query [-p projection] -U tierionUsername -P tierionPassword -V -D';
     const options = commandLineArgs([{
         name: 'uri',
         alias: 'u',
@@ -373,7 +378,12 @@ function commandLineOptions() {
     }, {
         name: 'debug',
         alias: 'd',
-        type: String
+        type: Boolean
+    },
+     {
+        name: 'ValidateAll',
+        alias: 'V',
+        type: Boolean
     }]);
     if (!(('uri' in options) && ('query' in options) && ('collection' in options) && ('tierionUser' in options))) {
         console.log(usage);
