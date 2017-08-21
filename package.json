@@ -30,8 +30,7 @@
     "sprintf-js": "*",
     "command-line-args":"*",
     "chainpoint-validate":"*",
-    "bitcoin-p2p": ">=0.0.8",
-    "bigint": ">=0.3.1"
+    "node-rest-client":"*"
   } ,
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

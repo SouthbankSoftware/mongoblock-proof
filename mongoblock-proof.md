@@ -153,7 +153,7 @@ checking hash for  { _id: 599546b10b0c115799ee58f4,
 ***** Generating hash  hash= 937b39ef759fb1bf84deaa12721d18f085a1afe2927a9de5969c5477110953a2
 Hash has not changed
 ***** Checking hash receipt on the blockchain
-***** Reciept is valid
+***** Receipt is valid
 ***** See https://blockchain.info/tx/71436bc1b3d3a532f3df2feb9b6e0576ea09eebde1a05f237da8b4bb590d7192
 ***** For blockchain transaction details
 ```

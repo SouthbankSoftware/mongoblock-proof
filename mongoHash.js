@@ -22,8 +22,9 @@ const MongoClient = require('mongodb').MongoClient;
 const commandLineArgs = require('command-line-args');
 const Hashclient = require('hashapi-lib-node');
 const Chainpointvalidate = require('chainpoint-validate');
+const Restclient = require('node-rest-client').Client;
 
-
+const restClient = new Restclient();
 const chainpointValidate = new Chainpointvalidate();
 
 let hashClient; // Tierion client
@@ -87,7 +88,6 @@ function setupTierion(username, password) {
     process.stdout.write('***** Authenticating with Tierion');
     hashClient = new Hashclient();
     returnValue = new Promise((resolve, reject) => {
-
         hashClient.authenticate(username, password, (err, myToken) => {
             if (err) {
                 // handle the error
@@ -275,6 +275,9 @@ function checkAllHash(db) {
                         console.log('Hash has not changed');
                         validateHash(doc.receipt).then((validation) => {
                             if (debug) console.log(validation);
+                            console.log('Blockchain entry is at ', Date(validation));
+                            console.log('Hash on database document is at ', doc.dateTime);
+                            console.log(typeof Date(validation), typeof doc.dateTime );
                             resolve(true);
                         });
                     }
@@ -284,6 +287,9 @@ function checkAllHash(db) {
     });
     return (returnValue);
 }
+
+// TODO: Modularize the two functions
+
 //
 // See if the hash in the control table still matches the query parameters
 //
@@ -313,6 +319,8 @@ function checkHash(db, dbName, collection, query, projection) {
                         console.log('Hash has not changed');
                         validateHash(doc.receipt).then((validation) => {
                             if (debug) console.log(validation);
+                            console.log('Blockchain entry is at ', validation);
+                            console.log('Hash on database document is at ', doc.dateTime);
                             resolve(true);
                         });
                     }
@@ -333,10 +341,20 @@ function validateHash(receipt) {
                 reject(err);
             } else if (result.isValid === true) {
                 console.log('***** Reciept is valid');
-                console.log('***** See https://blockchain.info/tx/' + receipt.anchors[0].sourceId);
+                const txId = receipt.anchors[0].sourceId;
+
+                console.log('***** See "https://blockchain.info/tx/' + receipt.anchors[0].sourceId);
                 console.log('***** For blockchain transaction details');
+                console.log('***** Looking up blockchain transaction');
                 // TODO: Should lookup blockchain transaction and check timestamps align
-                resolve(result);
+                lookupTxn(txId).then((txnResult) => {
+                    if (debug) console.log(txnResult);
+                    if ('time' in txnResult) {
+                        resolve(txnResult.time);
+                    } else {
+                        reject(txnResult);
+                    }
+                });
             } else {
                 reject(result);
             }
@@ -344,6 +362,20 @@ function validateHash(receipt) {
     });
     return (returnValue);
 }
+
+function lookupTxn(transactionId) {
+    const txRest = 'https://blockchain.info/rawtx/' + transactionId;
+    const result = new Promise((resolve) => {
+        restClient.get(txRest, (data, response) => {
+            // parsed response body as js object
+            // raw response
+            if (debug) console.log(response);
+            resolve(data);
+        });
+    });
+    return (result);
+}
+
 
 function commandLineOptions() {
     const usage = 'Usage: -u MongoURI -c collectionName -q query [-p projection] -U tierionUsername -P tierionPassword -V -D';
