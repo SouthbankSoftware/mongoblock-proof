@@ -33,7 +33,7 @@ let debug = false;
 
 const options = commandLineOptions();
 if (options.debug) debug = true;
-if (debug) console.log('options=' + JSON.stringify(options));
+debuglog('options=' + JSON.stringify(options));
 let hash;
 
 // Connect to MOngoDB
@@ -50,27 +50,29 @@ const query = options.query;
 const projection = options.projection;
 
 if (options.ValidateAll) {
+    // Validate the existing hashes
     Promise.all([db0, authToken]).then((params) => { // Wait for connection promises
         const db = params[0];
-        checkAllHash(db).then(() => {
-            console.log('Checked all hashes');
+        checkHash(db).then(() => {
+            log('Checked all hashes');
             process.exit(0);
         });
     });
 } else {
+    // Generate a new hash and store it on the block chain
     Promise.all([db0, authToken]).then((params) => { // Wait for connection promises
         const db = params[0];
         const token = params[1];
-        if (debug) console.log(token);
+        debuglog(token);
         init(db); // This only needs to be called once
         hash = genHash(db, options.collection, query, projection);
         hash.then((h) => {
-            console.log('hash=' + h);
+            log('hash=' + h);
             saveHashDb(db, db.databaseName, options.collection, h,
                 query, projection).then((o) => {
-                if (debug) console.log('insert result=' + JSON.stringify(o.result));
+                debuglog('insert result=' + JSON.stringify(o.result));
                 saveHashBlockChain(db, h).then((res) => {
-                    if (debug) console.log('receipt', res);
+                    debuglog('receipt', res);
                     checkHash(db, db.databaseName, options.collection,
                         query, projection).then(() => {
                         process.exit(0);
@@ -79,26 +81,38 @@ if (options.ValidateAll) {
             });
         });
     }).catch((err) => {
-        console.log(err);
+        log(err);
         process.exit(1);
     });
 }
 
+function log(logentry) {
+    const datetime = new Date();
+    console.log(datetime, logentry);
+}
+
+function debuglog(string) {
+    if (debug) {
+        const datetime = new Date();
+        console.log(datetime + ' DEBUG: ' + string);
+    }
+}
+
 function setupTierion(username, password) {
-    process.stdout.write('***** Authenticating with Tierion');
+    log('Authenticating with Tierion');
     hashClient = new Hashclient();
     returnValue = new Promise((resolve, reject) => {
         hashClient.authenticate(username, password, (err, myToken) => {
             if (err) {
                 // handle the error
-                console.log(err);
+                log(err);
                 reject(err);
             } else {
                 // authentication was successful
                 // access_token, refresh_token are returned in authToken
                 // authToken values are saved internally and managed autmatically for the life of the HashClient
-                console.log('Authentiation success');
-                if (debug) console.log(myToken);
+                log('Authentiation success');
+                debuglog(myToken);
                 resolve(myToken);
             }
         });
@@ -109,7 +123,7 @@ function setupTierion(username, password) {
 // This just needs to be called once to setup unique index
 //
 function init(db) {
-    console.log('***** Checking DB tables');
+    log('Checking DB tables');
     mydb = db.db('mongoblock-proof');
     mydb.collection('query_hashes').createIndex({
         'db': 1,
@@ -129,8 +143,8 @@ function init(db) {
 // Create a hash from a supplied query
 //
 function genHash(db, collection, query, projection) {
-    process.stdout.write('***** Generating hash ');
-    if (debug) console.log(db);
+    log('Generating hash ');
+    //    debuglog(db);
     const algo = 'sha256';
     const shasum = crypto.createHash(algo);
 
@@ -146,7 +160,7 @@ function genHash(db, collection, query, projection) {
             (err) => {
                 if (err === null) {
                     const thisHash = shasum.digest('hex');
-                    console.log(' hash= ' + thisHash);
+                    log('hash= ' + thisHash);
                     resolve(thisHash);
                 } else {
                     reject(err);
@@ -161,22 +175,22 @@ function genHash(db, collection, query, projection) {
 // Save the hash to the blockchain using Tierion
 //
 function saveHashBlockChain(db, hash) {
-    process.stdout.write('**** registering hash in blockchain ');
+    log('registering hash in blockchain ');
     blockchainReceipt = new Promise((resolve, reject) => {
         hashClient.submitHashItem(hash, (err, receiptid) => {
             if (err) {
-                console.log(err);
+                log(err);
                 reject(err);
             } else {
-                console.log('receipt id', receiptid);
-                console.log('Waiting for confirmation');
+                log('receipt id', receiptid);
+                log('Waiting for confirmation');
                 const myTimer = setInterval(() => {
-                    process.stdout.write('checking... ');
+                    log('checking... ');
                     hashClient.getReceipt(receiptid.receiptId, (err2, result) => {
                         if (err2) {
-                            console.log(err2);
+                            log(err2);
                         } else {
-                            console.log('Tierion returns', result);
+                            log('Tierion returns', result);
                             updateDbRecord(db, hash, result.receipt).then(() => {
                                 clearInterval(myTimer);
                                 resolve(result.receipt);
@@ -192,10 +206,10 @@ function saveHashBlockChain(db, hash) {
 
 // Update the control table with the blockchain receipt
 function updateDbRecord(db, hash, receipt) {
-    console.log('****  Updating DB with receipt');
+    log('Updating DB with receipt');
     mydb = db.db('mongoblock-proof');
 
-    console.log(filterData);
+    log(filterData);
     updatedObject = new Promise((resolve, reject) => {
         mydb.collection('query_hashes').update({
                 hash
@@ -220,7 +234,7 @@ function updateDbRecord(db, hash, receipt) {
 // Insert a hash into the control table
 //
 function saveHashDb(db, dbName, collection, hash, query, projection) {
-    process.stdout.write('**** Writing hash to database ');
+    log('Writing hash to database ');
     mydb = db.db('mongoblock-proof');
 
     hashData = {
@@ -234,7 +248,7 @@ function saveHashDb(db, dbName, collection, hash, query, projection) {
         query,
         projection
     };
-    console.log(filterData);
+    log(filterData);
     insertedObject = new Promise((resolve, reject) => {
         mydb.collection('query_hashes').update(filterData, {
             $set: hashData
@@ -254,39 +268,39 @@ function saveHashDb(db, dbName, collection, hash, query, projection) {
 //
 // See if the hash in the control table still matches the query parameters
 //
-function checkAllHash(db) {
-    console.log('***** Validating Hash');
-    const mydb = db.db('mongoblock-proof');
-    const mycollection = mydb.collection('query_hashes');
+// function checkAllHash(db) {
+//     log('Validating Hash');
+//     const mydb = db.db('mongoblock-proof');
+//     const mycollection = mydb.collection('query_hashes');
 
-    returnValue = new Promise((resolve) => {
-        const data = mycollection.find({}).toArray();
-        data.then((docarray) => {
-            docarray.forEach((doc) => {
-                console.log('checking hash for ', doc);
-                oldHash = doc.hash;
-                genHash(db.db(doc.db), doc.collection, doc.query, doc.projection).then((newHash) => {
-                    if (newHash !== oldHash) {
-                        console.log('Hash has changed');
-                        console.log('old hash=' + oldHash);
-                        console.log('new Hash=' + newHash);
-                        resolve(false);
-                    } else {
-                        console.log('Hash has not changed');
-                        validateHash(doc.receipt).then((validation) => {
-                            if (debug) console.log(validation);
-                            console.log('Blockchain entry is at ', Date(validation));
-                            console.log('Hash on database document is at ', doc.dateTime);
-                            console.log(typeof Date(validation), typeof doc.dateTime );
-                            resolve(true);
-                        });
-                    }
-                });
-            });
-        });
-    });
-    return (returnValue);
-}
+//     returnValue = new Promise((resolve) => {
+//         const data = mycollection.find({}).toArray();
+//         data.then((docarray) => {
+//             docarray.forEach((doc) => {
+//                 log('checking hash for ', doc);
+//                 oldHash = doc.hash;
+//                 genHash(db.db(doc.db), doc.collection, doc.query, doc.projection).then((newHash) => {
+//                     if (newHash !== oldHash) {
+//                         log('Hash has changed');
+//                         log('old hash=' + oldHash);
+//                         log('new Hash=' + newHash);
+//                         resolve(false);
+//                     } else {
+//                         log('Hash has not changed');
+//                         validateHash(doc.receipt).then((validation) => {
+//                             debuglog(validation);
+//                             log('Blockchain entry is at ', Date(validation));
+//                             log('Hash on database document is at ', doc.dateTime);
+//                             log(typeof Date(validation), typeof doc.dateTime);
+//                             resolve(true);
+//                         });
+//                     }
+//                 });
+//             });
+//         });
+//     });
+//     return (returnValue);
+// }
 
 // TODO: Modularize the two functions
 
@@ -294,34 +308,48 @@ function checkAllHash(db) {
 // See if the hash in the control table still matches the query parameters
 //
 function checkHash(db, dbName, collection, query, projection) {
-    console.log('***** Validating Hash');
+    log('Validating Hash');
     const mydb = db.db('mongoblock-proof');
     const mycollection = mydb.collection('query_hashes');
-    filterData = {
-        db: dbName,
-        collection,
-        query,
-        projection
-    };
+    if (dbName) {
+        filterData = {
+            db: dbName,
+            collection,
+            query,
+            projection
+        };
+    } else {
+        filterData = {};
+    }
 
     returnValue = new Promise((resolve) => {
         const data = mycollection.find(filterData).toArray();
         data.then((docarray) => {
             docarray.forEach((doc) => {
+                debuglog('got back: ', doc);
                 oldHash = doc.hash;
-                genHash(db, collection, query, projection).then((newHash) => {
+                genHash(db, doc.collection, doc.query, doc.projection).then((newHash) => {
                     if (newHash !== oldHash) {
-                        console.log('Hash has changed');
-                        console.log('old hash=' + oldHash);
-                        console.log('new Hash=' + newHash);
+                        log('Hash has changed');
+                        log('old hash=' + oldHash);
+                        log('new Hash=' + newHash);
                         resolve(false);
                     } else {
-                        console.log('Hash has not changed');
+                        log('Hash has not changed');
                         validateHash(doc.receipt).then((validation) => {
-                            if (debug) console.log(validation);
-                            console.log('Blockchain entry is at ', validation);
-                            console.log('Hash on database document is at ', doc.dateTime);
-                            resolve(true);
+                            debuglog(validation);
+                            const validationDate = new Date(validation);
+                            log('Blockchain entry is at ', validation);
+                            log('this is ' + new Date(validation) + ' for you humans');
+                            log('Hash on database document is  ', doc.dateTime);
+                            const timeDiff = (validationDate.getTime() - doc.dateTime.getTime()) / 1000;
+                            log('Difference between timestamps :' + timeDiff + ' seconds');
+                            if (Math.abs(timeDiff) < 20 * 60) { // Our tolerance is 20 minutes
+                                resolve(true);
+                            } else {
+                                log('ERROR: Timetamp gap is too high');
+                                resolve(false);
+                            }
                         });
                     }
                 });
@@ -333,24 +361,24 @@ function checkHash(db, dbName, collection, query, projection) {
 
 // Check that a receipt stored in the database is in the blockchain
 function validateHash(receipt) {
-    console.log('***** Checking hash receipt on the blockchain');
-    if (debug) console.log(receipt);
+    log('Checking hash receipt on the blockchain');
+    debuglog(receipt);
     const returnValue = new Promise((resolve, reject) => {
         chainpointValidate.isValidReceipt(receipt, true, (err, result) => {
             if (err) {
                 reject(err);
             } else if (result.isValid === true) {
-                console.log('***** Reciept is valid');
+                log('Reciept is valid');
                 const txId = receipt.anchors[0].sourceId;
 
-                console.log('***** See "https://blockchain.info/tx/' + receipt.anchors[0].sourceId);
-                console.log('***** For blockchain transaction details');
-                console.log('***** Looking up blockchain transaction');
+                log('See "https://blockchain.info/tx/' + receipt.anchors[0].sourceId);
+                log('For blockchain transaction details');
+                log('Looking up blockchain transaction');
                 // TODO: Should lookup blockchain transaction and check timestamps align
                 lookupTxn(txId).then((txnResult) => {
-                    if (debug) console.log(txnResult);
+                    debuglog(txnResult);
                     if ('time' in txnResult) {
-                        resolve(txnResult.time);
+                        resolve(txnResult.time * 1000);
                     } else {
                         reject(txnResult);
                     }
@@ -369,7 +397,8 @@ function lookupTxn(transactionId) {
         restClient.get(txRest, (data, response) => {
             // parsed response body as js object
             // raw response
-            if (debug) console.log(response);
+            debuglog(response);
+            debuglog('*', data, '**');
             resolve(data);
         });
     });
@@ -378,43 +407,44 @@ function lookupTxn(transactionId) {
 
 
 function commandLineOptions() {
-    const usage = 'Usage: -u MongoURI -c collectionName -q query [-p projection] -U tierionUsername -P tierionPassword -V -D';
+    const usage = 'Usage: -u MongoURI -c collectionName -q query [-p projection] -U tierionUsername -P tierionPassword [-V] [-D]';
     const options = commandLineArgs([{
-        name: 'uri',
-        alias: 'u',
-        type: String
-    }, {
-        name: 'collection',
-        alias: 'c',
-        type: String
-    }, {
-        name: 'query',
-        alias: 'q',
-        type: String
-    }, {
-        name: 'projection',
-        alias: 'p',
-        type: String
-    }, {
-        name: 'tierionUser',
-        alias: 'U',
-        type: String
-    }, {
-        name: 'tierionPassword',
-        alias: 'P',
-        type: String
-    }, {
-        name: 'debug',
-        alias: 'd',
-        type: Boolean
-    },
-     {
-        name: 'ValidateAll',
-        alias: 'V',
-        type: Boolean
-    }]);
-    if (!(('uri' in options) && ('query' in options) && ('collection' in options) && ('tierionUser' in options))) {
-        console.log(usage);
+            name: 'uri',
+            alias: 'u',
+            type: String
+        }, {
+            name: 'collection',
+            alias: 'c',
+            type: String
+        }, {
+            name: 'query',
+            alias: 'q',
+            type: String
+        }, {
+            name: 'projection',
+            alias: 'p',
+            type: String
+        }, {
+            name: 'tierionUser',
+            alias: 'U',
+            type: String
+        }, {
+            name: 'tierionPassword',
+            alias: 'P',
+            type: String
+        }, {
+            name: 'debug',
+            alias: 'd',
+            type: Boolean
+        },
+        {
+            name: 'ValidateAll',
+            alias: 'V',
+            type: Boolean
+        }
+    ]);
+    if (!(('ValidateAll' in options) || (('uri' in options) && ('query' in options) && ('collection' in options) && ('tierionUser' in options)))) {
+        log(usage);
         process.exit();
     }
     return options;

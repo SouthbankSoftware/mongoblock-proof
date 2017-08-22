@@ -30,7 +30,7 @@
     "sprintf-js": "*",
     "command-line-args":"*",
     "chainpoint-validate":"*",
-    "node-rest-client":"*"
+    "node-rest-client":"*"npm in
   } ,
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
