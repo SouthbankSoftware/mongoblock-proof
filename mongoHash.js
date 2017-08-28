@@ -30,7 +30,7 @@ const chainpointValidate = new Chainpointvalidate();
 let hashClient; // Tierion client
 let debug = false;
 
-
+// Command line options
 const options = commandLineOptions();
 if (options.debug) debug = true;
 debuglog('options=' + JSON.stringify(options));
@@ -88,7 +88,10 @@ if (options.ValidateAll) {
 
 function log(logentry) {
     const datetime = new Date();
-    console.log(datetime, logentry);
+    if (typeof logentry === 'object') {
+        logentry = JSON.stringify(logentry);
+    }
+    console.log(datetime + ' ' + logentry);
 }
 
 function debuglog(string) {

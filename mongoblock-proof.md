@@ -94,7 +94,7 @@ The sequence of events in this function is:
 2. We check the status of the receiptId periodically using the getReceipt call.  It may take as long as 10 minutes to see our receipt on the block, so we poll every 30 seconds
 3. Once we get the updated receipt, we store it into the database record. 
 
-If we want to see that the database documents have not been tampered with, we call the checkHash function, using the query filters that we originally used to create the hash in the first place.  This checks that the hash values stored in the database control table still matches, and retrieves the receipt id that was generated from the blockchain
+If we want to see that the database documents have not been tampered with, we call the checkHash function, using the query filters that we originally used to create the hash in the first place.  This checks that the hash values stored in the database control table still match, and retrieves the receipt id that was generated from the blockchain
 ```javascript
 function checkHash(db, dbName, collection, query, projection) {
     console.log('***** Validating Hash');
