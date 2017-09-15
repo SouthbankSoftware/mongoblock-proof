@@ -32,31 +32,39 @@ We generate a hash for a set of MongoDB documents using the `crypto` package.  T
 
 ```javascript
 function genHash(db, collection, query, projection) {
-    log('Generating hash ');
-    const algo = 'sha256';
-    const shasum = crypto.createHash(algo);
+  log('Generating hash for ', collection, query, projection);
+  const algo = 'sha256';
+  const shasum = crypto.createHash(algo);
 
-    const cursor = db.collection(collection).find(JSON.parse(query));
-    if (projection !== 'undefined') {
-        cursor.project(JSON.parse(projection));
-    }
-    hash = new Promise((resolve, reject) => {
-        cursor.forEach(
-            (doc) => {
-                shasum.update(JSON.stringify(doc));
-            },
-            (err) => {
-                if (err === null) {
-                    const thisHash = shasum.digest('hex');
-                    log('hash= ' + thisHash);
-                    resolve(thisHash);
-                } else {
-                    reject(err);
-                }
-            }
-        );
+  const queryData = {
+    databaseName: db.databaseName,
+    collection,
+    query,
+    projection
+  };
+
+  const cursor = db
+    .collection(collection)
+    .find(JSON.parse(query));
+
+  if (projection !== 'undefined') {
+    cursor.project(JSON.parse(projection));
+  }
+  hash = new Promise((resolve, reject) => {
+    shasum.update(stringify(queryData)); // Query must be exactly the same
+    cursor.forEach((doc) => {
+      shasum.update(JSON.stringify(doc));
+    }, (err) => {
+      if (err === null) {
+        const thisHash = shasum.digest('hex');
+        log('hash= ' + thisHash);
+        resolve(thisHash);
+      } else {
+        reject(err);
+      }
     });
-    return (hash);
+  });
+  return (hash);
 }
 ``` 
 
@@ -68,33 +76,33 @@ Next we call out to Tierion to store that hash on the blockchain.
 
 ```javascript
 function saveHashBlockChain(db, hash) {
-    log('registering hash in blockchain ');
-    blockchainReceipt = new Promise((resolve, reject) => {
-        hashClient.submitHashItem(hash, (err, receiptid) => {
-            if (err) {
-                log(err);
-                reject(err);
+  log('registering hash in blockchain ');
+  blockchainReceipt = new Promise((resolve, reject) => {
+    hashClient.submitHashItem(hash, (err, receiptid) => {
+      if (err) {
+        log(err);
+        reject(err);
+      } else {
+        log('receipt id', receiptid);
+        log('Waiting for confirmation');
+        const myTimer = setInterval(() => {
+          log('checking... ');
+          hashClient.getReceipt(receiptid.receiptId, (err2, result) => {
+            if (err2) {
+              log(err2);
             } else {
-                log('receipt id', receiptid);
-                log('Waiting for confirmation');
-                const myTimer = setInterval(() => {
-                    log('checking... ');
-                    hashClient.getReceipt(receiptid.receiptId, (err2, result) => {
-                        if (err2) {
-                            log(err2);
-                        } else {
-                            log('Tierion returns', result);
-                            updateDbRecord(db, hash, result.receipt).then(() => {
-                                clearInterval(myTimer);
-                                resolve(result.receipt);
-                            });
-                        }
-                    });
-                }, 30000);
+              log('Tierion returns', result);
+              updateDbRecord(db, hash, result.receipt).then(() => {
+                clearInterval(myTimer);
+                resolve(result.receipt);
+              });
             }
-        });
+          });
+        }, 30000);
+      }
     });
-    return (blockchainReceipt);
+  });
+  return (blockchainReceipt);
 }
 ```
 The sequence of events in this function is as follows:
@@ -108,95 +116,85 @@ If we want to see that the database documents have not been tampered with, we ca
 
 ```javascript
 function checkHash(db, dbName, collection, query, projection) {
-    log('Validating Hash');
-    const mydb = db.db('mongoblock-proof');
-    const mycollection = mydb.collection('query_hashes');
-    if (dbName) {
-        filterData = {
-            db: dbName,
-            collection,
-            query,
-            projection
-        };
-    } else {
-        filterData = {};
-    }
+  log('Validating Hash for ' + dbName + ' ' + collection + ' ' + query + ' ' + projection);
+  const mydb = db.db('mongoblock-proof');
+  const queryHashes = mydb.collection('query_hashes');
+  if (dbName) {
+    filterData = {
+      db: dbName,
+      collection,
+      query,
+      projection
+    };
+  } else {
+    filterData = {};
+  }
 
-    returnValue = new Promise((resolve) => {
-        const data = mycollection.find(filterData).toArray();
-        data.then((docarray) => {
-            docarray.forEach((doc) => {
-                debuglog('got back: ', doc);
-                oldHash = doc.hash;
-                genHash(db, doc.collection, doc.query, doc.projection).then((newHash) => {
-                    if (newHash !== oldHash) {
-                        log('Hash has changed');
-                        log('old hash=' + oldHash);
-                        log('new Hash=' + newHash);
-                        resolve(false);
-                    } else {
-                        log('Hash has not changed');
-                        validateHash(doc.receipt).then((validation) => {
-                            debuglog(validation);
-                            const validationDate = new Date(validation);
-                            log('Blockchain entry is at ', validation);
-                            log('this is ' + new Date(validation) + ' for you humans');
-                            log('Hash on database document is  ', doc.dateTime);
-                            const timeDiff = (validationDate.getTime() - doc.dateTime.getTime()) / 1000;
-                            log('Difference between timestamps :' + timeDiff + ' seconds');
-                            if (Math.abs(timeDiff) < 20 * 60) { // Our tolerance is 20 minutes
-                                resolve(true);
-                            } else {
-                                log('ERROR: Timetamp gap is too high');
-                                resolve(false);
-                            }
-                        });
-                    }
-                });
+  returnValue = new Promise((resolve) => {
+    const data = queryHashes
+      .find(filterData)
+      .toArray();
+    data.then((docarray) => {
+      log(docarray.length + ' hashes found');
+      if (docarray.length === 0) {
+        log('No existing hashes found for provided query parameters');
+        resolve(false);
+      }
+      docarray.forEach((doc) => {
+        log('Checking hash for ', doc.collection, doc.query, doc.projection);
+        oldHash = doc.hash;
+        genHash(db, doc.collection, doc.query, doc.projection).then((newHash) => {
+          if (newHash !== oldHash) {
+            log('Hash has changed');
+            log('old hash=' + oldHash);
+            log('new Hash=' + newHash);
+            resolve(false);
+          } else {
+            log('Hash has not changed');
+            validateHash(doc.receipt).then((validation) => {
+              debuglog(validation);
+              const validationDate = new Date(validation);
+              log('Blockchain entry is at ' + validation);
+              log('this is ' + new Date(validation) + ' for you humans');
+              log('Hash on database document is  ' + doc.dateTime);
+              const timeDiff = (validationDate.getTime() - doc.dateTime.getTime()) / 1000;
+              log('Difference between timestamps :' + timeDiff + ' seconds');
+              if (Math.abs(timeDiff) < 20 * 60) { // Our tolerance is 20 minutes
+                resolve(true);
+              } else {
+                log('ERROR: Timetamp gap is too high');
+                resolve(false);
+              }
             });
+          }
         });
+      });
     });
-    return (returnValue);
+  });
+  return (returnValue);
 }
 ```
 Here is the output from running the program on some sample data:
 
 ```
-node mongoHash.js -u localhost:27016/SampleCollections -U 'guy.harrison@outlook.com' -P 'DBEnvy2016' -c Sakila_actors -q {} -p {}
-Guy15in-MacBook:mongoblock-proof gharriso$ bash mongoblock-proof.sh
-bash: mongoblock-proof.sh: No such file or directory
-Guy15in-MacBook:mongoblock-proof gharriso$ bash mongoHash.sh
-Wed Sep 13 2017 17:16:39 GMT+1000 (AEST) Authenticating with Tierion
-Wed Sep 13 2017 17:16:45 GMT+1000 (AEST) Authentiation success
-Wed Sep 13 2017 17:16:45 GMT+1000 (AEST) Checking DB tables
-Wed Sep 13 2017 17:16:45 GMT+1000 (AEST) Generating hash
-Wed Sep 13 2017 17:16:45 GMT+1000 (AEST) hash= 66647a3cdd586ebc4788bb0ec2ac1ac658ee522ca91fcaf18fc11a83a7d15ca8
-Wed Sep 13 2017 17:16:45 GMT+1000 (AEST) hash=66647a3cdd586ebc4788bb0ec2ac1ac658ee522ca91fcaf18fc11a83a7d15ca8
-Wed Sep 13 2017 17:16:45 GMT+1000 (AEST) Writing hash to database
-Wed Sep 13 2017 17:16:45 GMT+1000 (AEST) {"db":"SampleCollections","collection":"Sakila_actors","query":"{}","projection":"{}"}
-Wed Sep 13 2017 17:16:45 GMT+1000 (AEST) registering hash in blockchain
-Wed Sep 13 2017 17:16:52 GMT+1000 (AEST) receipt id
-Wed Sep 13 2017 17:16:52 GMT+1000 (AEST) Waiting for confirmation
-Wed Sep 13 2017 17:17:22 GMT+1000 (AEST) checking...
-Wed Sep 13 2017 17:17:26 GMT+1000 (AEST) {"error":"Receipt with Id = 59b8db6401647049021f9391 has not been generated. The block has not yet been processed."}
-nerated. The block has not yet been processed."}
-Wed Sep 13 2017 17:20:22 GMT+1000 (AEST) checking...
-Wed Sep 13 2017 17:20:26 GMT+1000 (AEST) Tierion returns
-Wed Sep 13 2017 17:20:26 GMT+1000 (AEST) Updating DB with receipt
-Wed Sep 13 2017 17:20:26 GMT+1000 (AEST) {"db":"SampleCollections","collection":"Sakila_actors","query":"{}","projection":"{}"}
-Wed Sep 13 2017 17:20:26 GMT+1000 (AEST) Validating Hash
-Wed Sep 13 2017 17:20:26 GMT+1000 (AEST) Generating hash
-Wed Sep 13 2017 17:20:26 GMT+1000 (AEST) hash= 66647a3cdd586ebc4788bb0ec2ac1ac658ee522ca91fcaf18fc11a83a7d15ca8
-Wed Sep 13 2017 17:20:26 GMT+1000 (AEST) Hash has not changed
-Wed Sep 13 2017 17:20:26 GMT+1000 (AEST) Checking hash receipt on the blockchain
-Wed Sep 13 2017 17:20:32 GMT+1000 (AEST) Reciept is valid
-Wed Sep 13 2017 17:20:32 GMT+1000 (AEST) See "https://blockchain.info/tx/68686155addca8b3fc0f3077867a8ed3f588afb550a1f751702eef8c3bd76879
-Wed Sep 13 2017 17:20:32 GMT+1000 (AEST) For blockchain transaction details
-Wed Sep 13 2017 17:20:32 GMT+1000 (AEST) Looking up blockchain transaction
-Wed Sep 13 2017 17:20:38 GMT+1000 (AEST) Blockchain entry is at
-Wed Sep 13 2017 17:20:38 GMT+1000 (AEST) this is Wed Sep 13 2017 17:20:00 GMT+1000 (AEST) for you humans
-Wed Sep 13 2017 17:20:38 GMT+1000 (AEST) Hash on database document is
-Wed Sep 13 2017 17:20:38 GMT+1000 (AEST) Difference between timestamps :-26.773 seconds
+Fri Sep 15 2017 10:53:47 GMT+1000 (AEST) Authenticating with Tierion
+Fri Sep 15 2017 10:53:48 GMT+1000 (AEST) Generating hash for  Sakila_films {"Rating":"G"} {}
+Fri Sep 15 2017 10:53:48 GMT+1000 (AEST) Writing hash to database
+Fri Sep 15 2017 10:53:48 GMT+1000 (AEST) registering hash in blockchain
+Fri Sep 15 2017 10:53:49 GMT+1000 (AEST) receipt id {"receiptId":"59bb249de4a70229ae2ea1f1","timestamp":1505436829}
+Fri Sep 15 2017 10:53:49 GMT+1000 (AEST) Waiting for confirmation
+Fri Sep 15 2017 11:00:20 GMT+1000 (AEST) Tierion returns {"receipt":"{\"@context\":\"...
+Fri Sep 15 2017 11:00:20 GMT+1000 (AEST) Checking hash for  Sakila_films {"Rating":"G"} {}
+Fri Sep 15 2017 11:00:20 GMT+1000 (AEST) Generating hash for  Sakila_films {"Rating":"G"} {}
+Fri Sep 15 2017 11:00:20 GMT+1000 (AEST) hash= 90c6d07de17e064b0b42648fa13314184fbb1c6b1f74d69b60969cb57ccf7cca
+Fri Sep 15 2017 11:00:20 GMT+1000 (AEST) Hash has not changed
+Fri Sep 15 2017 11:00:20 GMT+1000 (AEST) Checking hash receipt on the blockchain
+Fri Sep 15 2017 11:00:21 GMT+1000 (AEST) Reciept is valid
+Fri Sep 15 2017 11:00:21 GMT+1000 (AEST) See "https://blockchain.info/tx/e615a3a07da844eb34bec7bff5d22979880b05cbf33dcee98d0c876b22d93069
+Fri Sep 15 2017 11:00:21 GMT+1000 (AEST) For blockchain transaction details
+Fri Sep 15 2017 11:00:21 GMT+1000 (AEST) Looking up blockchain transaction
+Fri Sep 15 2017 11:00:22 GMT+1000 (AEST) Hash on database document is  Fri Sep 15 2017 11:00:20 GMT+1000 (AEST)
+Fri Sep 15 2017 11:00:22 GMT+1000 (AEST) Difference between timestamps :-20.506 seconds
 ```
 If we go to the blockchain.info page we can check that the blockchain transaaction id is what we expect.    The data at blockchain.info is proof that the database document hashes were valid at the time at which the block was added to the blockchain.  If the hash value is the same now as it was then we can be confident that the documents have not been changed. 
 
