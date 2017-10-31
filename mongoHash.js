@@ -355,6 +355,8 @@ function checkHash(db, dbName, collection, query, projection) {
 function validateHash(receipt) {
   log('Checking hash receipt on the blockchain');
   debuglog(receipt);
+  //TODO: Shoud check here that the hash inside the receipt is the
+  // same as the one in the database
   const returnValue = new Promise((resolve, reject) => {
     chainpointValidate.isValidReceipt(receipt, true, (err, result) => {
       if (err) {
