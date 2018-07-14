@@ -33,10 +33,13 @@ let debug = false;
 
 
 let hash;
-let receiptid='5b3bea681ab3ae29b7a753a8';
+//let receiptid='5b3bea681ab3ae29b7a753a8';
+let receiptid=process.argv[2];
 //
 // Connect to tierion
 //
+console.log(process.argv);
+
 const authToken = setupTierion('guy.harrison@outlook.com', 'DBEnvy2016');
 
 log('receipt id', receiptid);
